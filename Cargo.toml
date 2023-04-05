@@ -1,5 +1,5 @@
 [package]
-name = "gptcmd"
+name = "gptxt"
 version = "0.1.0"
 edition = "2021"
 
@@ -16,3 +16,6 @@ rustpython = { git = "https://github.com/RustPython/RustPython", rev = "707fbcf"
 tokio-util = "0.7"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 toml = "0.7"
+tempfile = "3"
+
+nix = "0.26"

@@ -1,17 +1,19 @@
 use std::error::Error;
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, Write};
 use std::time::Duration;
 use std::{fmt, io};
+use std::process::Command;
 use std::str::FromStr;
 
-use clap::{arg, Arg, ArgAction, Command};
+use clap::{arg, Arg, ArgAction};
 use crossterm::event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::terminal;
 use indicatif::ProgressBar;
 use openai::completions::Completion;
 use rustpython::vm;
 use rustpython::vm::PyObjectRef;
+use tempfile::NamedTempFile;
 use tokio::signal::unix::{signal, SignalKind};
 use toml::Value;
 
@@ -62,7 +64,7 @@ struct Arguments {
 }
 
 fn parse_command_line_arguments() -> Arguments {
-    let matches = Command::new("GPT text processing assistant")
+    let matches = clap::Command::new("GPT text processing assistant")
         .version("1.0")
         .arg_required_else_help(true)
         .arg(arg!(<task> "Description of a text processing task"))
@@ -200,11 +202,16 @@ async fn execute_program_loop(input: &str, args: Arguments) {
     }
 
     fn prompt_for_run_program() -> char {
-        prompt("Run generated program? ([y]es/[n]o/[r]egen) ")
+        prompt("Run generated program? ([y]es/[q]uit/[r]egen/[e]dit) ")
     }
 
-    fn show_generated_program(program: &str) {
-        eprintln!("Generated program:");
+    fn show_generated_program(program: &str, edited: &mut bool) {
+        if !*edited {
+            eprintln!("Generated program:");
+        } else {
+            eprintln!("Edited program:");
+            *edited = false;
+        }
         eprintln!("------------------------------");
         eprintln!("{}", program);
         eprintln!("------------------------------");
@@ -214,9 +221,10 @@ async fn execute_program_loop(input: &str, args: Arguments) {
 
     let mut program = generate_program_with_progress(&args, input).await;
     let mut program_hist = vec![program.clone()];
+    let mut edited = false;
 
     loop {
-        show_generated_program(&program);
+        show_generated_program(&program, &mut edited);
 
         match prompt_for_run_program() {
             'y' => {
@@ -243,10 +251,11 @@ async fn execute_program_loop(input: &str, args: Arguments) {
                     }
                 }
             }
-            'n' => {
+            'q' => {
                 break;
             }
             'r' => {
+                eprintln!();
                 program = generate_program_with_progress(&args, input).await;
                 if program_hist.contains(&program) {
                     eprintln!("Re-generated program is identical to previously generated program. Please rephrase your task.");
@@ -255,17 +264,52 @@ async fn execute_program_loop(input: &str, args: Arguments) {
                     program_hist.push(program.clone());
                 }
             }
+            'e' => {
+                eprintln!();
+                match edit_program_with_vi(&program) {
+                    Ok(edited_program) => {
+                        program = edited_program;
+                        edited = true;
+                    }
+                    Err(e) => {
+                        eprintln!("Error editing program with 'vi': {}", e);
+                    }
+                }
+            }
             _ => {
-                eprintln!("Invalid input; enter 'y', 'n', or 'r'.");
+                eprintln!("Invalid input; enter 'y', 'q', 'r', or 'e'.");
                 continue;
             }
         }
     }
 }
 
+fn edit_program_with_vi(program: &str) -> Result<String, Box<dyn Error>> {
+    // Create a temporary file and write the program to it
+    let mut temp_file = NamedTempFile::new()?;
+    temp_file.write_all(program.as_bytes())?;
+
+    // Open the temporary file with the 'vi' editor
+    let status = Command::new("vi")
+        .arg(temp_file.path())
+        .status()?;
+
+    // Check if the 'vi' command exited successfully
+    if !status.success() {
+        return Err(format!("'vi' command exited with an error: {}", status).into());
+    }
+
+    // Read the edited content back from the temporary file
+    let mut edited_program = String::new();
+    temp_file.seek(io::SeekFrom::Start(0))?;
+    temp_file.read_to_string(&mut edited_program)?;
+
+    Ok(edited_program)
+}
+
 fn read_or_create_config() -> Result<String, Box<dyn Error>> {
     let config_dir = dirs::config_dir().ok_or("Unable to find config directory")?;
-    let config_path = config_dir.join("gptcmd.toml");
+    let config_path = config_dir.join("gptxt.toml");
 
     if !config_dir.exists() {
         fs::create_dir_all(&config_dir)?;
@@ -393,7 +437,7 @@ fn prompt(message: &str) -> char {
                                  })) = read()
             {
                 match code {
-                    KeyCode::Char(ch @ 'y') | KeyCode::Char(ch @ 'n') | KeyCode::Char(ch @ 'r') => {
+                    KeyCode::Char(ch @ 'y') | KeyCode::Char(ch @ 'q') | KeyCode::Char(ch @ 'r') | KeyCode::Char(ch @ 'e') => {
                         input = ch;
                         break;
                     }
