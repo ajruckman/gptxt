@@ -1,6 +1,6 @@
 ## Text processing via natural language descriptions
 
-Uses [RustPython](https://github.com/RustPython/RustPython) for compiling GPT-4-generated programs to Rust on-the-fly.
+Uses [RustPython](https://github.com/RustPython/RustPython) for executing GPT-3.5-generated Python programs in Rust on-the-fly.
 
 ### Usage
 
@@ -31,6 +31,8 @@ ajr@ajr-desktop-h /a/r/c/d/r/gptxt (main)> target/release/gptxt \
   --show-lines 3 \
   --show-prompt \
   | jq
+```
+```
 Prompt:
 ------------------------------
 # You are part of a tool that creates Python code for text processing.
@@ -125,6 +127,8 @@ Output:
 ajr@ajr-desktop-h /a/r/c/d/r/gptxt (main)> cat examples/test.psv | target/release/gptxt \
   "get values in the 'City' column for rows which aren't empty as a string delimited by ':', skipping the column header" \
   --show-lines 3
+```
+```
 Generated program:
 ------------------------------
 result = ':'.join([row.split('|')[4] for row in data.splitlines()[1:] if row])
